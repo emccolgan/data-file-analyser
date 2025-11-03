@@ -1,4 +1,3 @@
-import locale
 import math
 import numpy as np
 import pandas as pd
@@ -7,13 +6,17 @@ import streamlit as st
 from time import sleep
 
 dtypes = ['boolean', 'Int8', 'Int16', 'Int32', 'Int64', 'Float32',
-          'Float64', 'datetime64', 'object']
-numeric_dtypes = ['Int8', 'Int16', 'Int32', 'Int64', 'Float32', 'Float64']
+          'Float64', 'datetime64', 'string', 'object', 'category']
+numeric_dtypes = ['int8', 'int16', 'int32', 'int64', 'float32', 'float64',
+                  'Int8', 'Int16', 'Int32', 'Int64', 'Float32', 'Float64']
 int_dtypes = ['int8', 'int16', 'int32', 'int64',
               'Int8', 'Int16', 'Int32', 'Int64']
+chart_types = ['scatter', 'heatmap', 'histogram', 'line', 'bar', 'box plot']
+color_scales = ['Solid'] + px.colors.named_colorscales()
 
 data = {
     "has_data": False,
+    "filename": None,
     "raw": pd.DataFrame(),
     "clean": pd.DataFrame(),
     "summary": pd.DataFrame(),
@@ -34,28 +37,20 @@ page = {
     "data_tab": st.empty(),
     "raw_tab": st.empty(),
     "summary_tab": st.empty(),
+    "correlation_tab": st.empty(),
     "config_tab": st.empty(),
     "data_file": st.empty(),
-    "side":{
-        "continuous":{
-            "tab": st.empty(),
-            "x_axis": {
-                "select": st.empty(),
-                "select_many": st.empty()
-            },
-            "y_axis": {
-                "select": st.empty()
-            }
+    "chart_type": None,
+    "chart_display": None,
+    "color_scale": None,
+    "variables":{
+        "dependent": {
+            "select": st.empty(),
+            "values": []
         },
-        "categorical":{
-            "tab": st.empty(),
-            "x_axis": {
-                "select": st.empty(),
-                "select_many": st.empty()
-            },
-            "y_axis": {
-                "select": st.empty()
-            }
+        "independent": {
+            "select": st.empty(),
+            "values": []
         }
     },
     "config": {
@@ -66,7 +61,7 @@ page = {
 summary_config = {
     "genre": "Date Genre",
     "types": "Types",
-    "unique": "Unique Values",
+    "unique": "Cardinality (Unique Values)",
     "percent_null": st.column_config.NumberColumn(
         "Percentage Empty",
         format="percent",
@@ -82,17 +77,30 @@ def read_session_data():
     if st.session_state.get('drop_columns'):
         data["config"]['drop_columns'] = st.session_state['drop_columns']
 
-    if st.session_state.get('btn_continuous'):
-        st.session_state['data_type'] = "Continuous"
-        if st.session_state.get('x_axis_continuous'):
-            st.session_state['x_axis_cols'] = st.session_state['x_axis_continuous']
-    elif st.session_state.get('btn_categorical'):
-        st.session_state['data_type'] = "Categorical"
-        if st.session_state.get('x_axis_categorical'):
-            st.session_state['x_axis_cols'] = st.session_state['x_axis_categorical']
+    dependent_var = st.session_state.get('dependent_var')
+    if dependent_var:
+        page["variables"]["dependent"]["values"] = dependent_var
+        st.session_state['dependent_cols'] = dependent_var
+
+    independent_var = st.session_state.get('independent_var')
+    if independent_var:
+        page["variables"]["independent"]["values"] = independent_var
 
     if st.session_state.get('column_config'):
         data["config"]["column_configs"] = st.session_state["column_config"]
+
+    if st.session_state.get('chart_type'):
+        page["chart_type"] = st.session_state["chart_type"]
+
+    if st.session_state.get('chart_display'):
+        page["chart_display"] = st.session_state["chart_display"]
+
+    if st.session_state.get('color_scale'):
+        page["color_scale"] = st.session_state["color_scale"]
+
+    data_file = st.session_state.get('data_file')
+    if data_file:
+        data["filename"] = data_file.name
 
 
 def clear_session_data():
@@ -103,33 +111,60 @@ def clear_session_data():
     if st.session_state.get('drop_columns'):
         data["config"]['drop_columns'] = []
         st.session_state.pop('drop_columns')
-    if st.session_state.get('x_axis_cols'):
-        st.session_state.pop('x_axis_cols')
+    if st.session_state.get('dependent_cols'):
+        st.session_state.pop('dependent_cols')
     if st.session_state.get('column_config'):
         data["config"]["column_configs"] = {}
         st.session_state.pop('column_config')
 
 
-def draw_graph(chart_data, x_axis, y_axis, graph_type):
+def draw_graph(chart_data, x_axis, y_axis, graph_type, color_scale):
     """ Draws the graphs for the csv data.
     :param chart_data: (pandas.DataFrame) Dataframe containing the csv data.
     :param x_axis: (str) Name of the x-axis column.
     :param y_axis: (str) Name of the y-axis column.
     :param graph_type: (str) The type of graph to be drawn (histogram, scatter, etc.).
+    :param color_scale: (str) The color scale to use for the graph
     """
-    x_data = chart_data.get(x_axis)
-    y_data = chart_data.get(y_axis)
-    if graph_type == "histogram":
-        if y_data is None:
-            plot = px.histogram(chart_data, x=x_data)
+    plot = None
+    key = f"{graph_type}_{x_axis}_{y_axis}"
+    st.subheader(f"{x_axis} vs. {y_axis}")
+    use_color_sequence = color_scale != "Solid"
+    if graph_type == "scatter":
+        if use_color_sequence:
+            plot = px.scatter(chart_data, x=x_axis, y=y_axis, color=y_axis,
+                              color_continuous_scale=color_scale)
         else:
-            plot = px.histogram(chart_data, x=x_data, y=y_data, histfunc='avg')
+            plot = px.scatter(chart_data, x=x_axis, y=y_axis)
         sleep(0.1)
-        st.plotly_chart(plot, use_container_width=True)
-    else:
-        plot = px.scatter(chart_data, x=x_data, y=y_data)
+        st.plotly_chart(plot, use_container_width=True, key=key)
+    elif graph_type == "heatmap":
+        if use_color_sequence:
+            plot = px.density_heatmap(chart_data, x=x_axis, y=y_axis,
+                                      color_continuous_scale=color_scale)
+        else:
+            plot = px.density_heatmap(chart_data, x=x_axis)
         sleep(0.1)
-        st.plotly_chart(plot, use_container_width=True)
+        st.plotly_chart(plot, use_container_width=True, key=key)
+    elif graph_type == "histogram":
+        if y_axis is None:
+            plot = px.histogram(chart_data, x=x_axis)
+        else:
+            plot = px.histogram(chart_data, x=x_axis, y=y_axis, histfunc='avg')
+        sleep(0.1)
+        st.plotly_chart(plot, use_container_width=True, key=key)
+    elif graph_type == "line":
+        plot = px.line(chart_data, x=x_axis, y=y_axis)
+        sleep(0.1)
+        st.plotly_chart(plot, use_container_width=True, key=key)
+    elif graph_type == "bar":
+        plot = px.bar(chart_data, x=x_axis)
+        sleep(0.1)
+        st.plotly_chart(plot, use_container_width=True, key=key)
+    elif graph_type == "box plot":
+        plot = px.box(chart_data, x=x_axis, y=y_axis)
+        sleep(0.1)
+        st.plotly_chart(plot, use_container_width=True, key=key)
     return plot
 
 
@@ -143,7 +178,7 @@ def convert_column_types(df):
                 df[col] = df[col].str.replace(",", "")
             try:
                 df[col] = df[col].astype(dtype)
-            except ValueError:
+            except (ValueError, TypeError):
                 st.error(f"Could not convert '{col}' to '{dtype}'", icon="🚨")
 
     for col in df.columns:
@@ -208,10 +243,13 @@ def load_data(data_file):
             has_data = False
             file_type = data_file.name.split(".")[-1]
             if file_type == "csv":
-                raw_data = pd.read_csv(data_file, encoding_errors='ignore')
+                raw_data = pd.read_csv(data_file, thousands=',',
+                                       parse_dates=True,
+                                       infer_datetime_format=True,
+                                       encoding_errors='ignore')
                 has_data = True
             elif file_type in ["xlsx", "xls"]:
-                raw_data = pd.read_excel(data_file)
+                raw_data = pd.read_excel(data_file, parse_dates=True)
                 has_data = True
             data["has_data"] = has_data
             data["raw"] = raw_data
@@ -252,74 +290,65 @@ def load_data(data_file):
                                            if col in columns["continuous"]]
 
 
-def set_x_axis_columns(data_type, columns):
-    st.session_state['data_type'] = data_type
-    st.session_state['x_axis_cols'] = columns
-
-
-def create_select_boxes():
+def create_select_boxes(chart_form):
     columns = data["columns"]
-    continuous = page["side"]["continuous"]
-    with continuous["tab"]:
-        cont_form = st.form(key="continuous_form")
-        continuous_numerical = columns["continuous_numerical"]
-        x_continuous = continuous["x_axis"]
-        x_continuous_select = cont_form.multiselect("X-Axis (Select up to 8)",
-                                                    continuous_numerical,
-                                                    key="x_axis_continuous",
-                                                    max_selections=8)
-        x_continuous["select_many"] = x_continuous_select
-        y_continuous = continuous["y_axis"]
-        y_continuous_select = cont_form.selectbox("Y-Axis (Select One)",
-                                                  continuous_numerical,
-                                                  key="y_axis_continuous",
-                                                  index=0)
-        y_continuous["select"] = y_continuous_select
-        cont_form.form_submit_button("Draw Graphs",
-                                     type="primary",
-                                     key="btn_continuous")
-
-    categorical = page["side"]["categorical"]
-    with categorical["tab"]:
-        cat_form = st.form(key="categorical_form")
-        categorical_columns = columns["categorical"]
-        x_categorical = categorical["x_axis"]
-        x_categorical_select = cat_form.multiselect("X-Axis",
-                                                    categorical_columns,
-                                                    key="x_axis_categorical")
-        x_categorical["select_many"] = x_categorical_select
-        y_categorical = categorical["y_axis"]
-        y_categorical["select"] = cat_form.selectbox("Y-Axis",
-                                                     continuous_numerical,
-                                                     key="y_axis_categorical",
-                                                     index=0)
-        cat_form.form_submit_button("Draw Graphs",
-                                    type="primary",
-                                    key="btn_categorical")
+    var_data = page["variables"]
+    chart_type = page["chart_type"]
+    max_charts = 8 if chart_type == "scatter" else None
+    all_columns = columns["all"]
+    independent_var = var_data["independent"]
+    independent_var_select = chart_form.selectbox("Independent Variable",
+                                                 all_columns,
+                                                 key="independent_var",
+                                                 index=0)
+    independent_var["select"] = independent_var_select
+    dependent_var = var_data["dependent"]
+    default_dependents = dependent_var["values"]
+    if max_charts is not None:
+        default_dependents = default_dependents[:max_charts]
+    dependent_var_select = chart_form.multiselect("Dependent Variables",
+                                                 all_columns, default=default_dependents,
+                                                 key="dependent_var",
+                                                 max_selections=max_charts)
+    dependent_var["select"] = dependent_var_select
+    chart_form.form_submit_button("Draw Graphs",
+                                 type="primary",
+                                 key="btn_var_data")
 
 
 def create_graphs():
-    if st.session_state.get('x_axis_cols'):
-        data_type = st.session_state['data_type']
-        x_axis_cols = st.session_state['x_axis_cols']
-        st.session_state.pop('x_axis_cols')
-        y_continuous = page["side"]["continuous"]["y_axis"]["select"]
-        y_categorical = page["side"]["categorical"]["y_axis"]["select"]
-        y_axis_val = y_continuous if data_type == 'Continuous' else y_categorical
-        graph_type = "histogram" if data_type == 'Categorical' else "scatter"
+    if st.session_state.get('dependent_cols'):
+        dependent_cols = st.session_state['dependent_cols']
+        st.session_state.pop('dependent_cols')
+        independent_var = page["variables"]["independent"]["select"]
+        independent_val = independent_var
+        graph_type = page["chart_type"]
         clean_data = data["clean"]
-        if len(x_axis_cols) > 3:
-            col1, col2 = st.columns(2, gap="large")
-            for index, x_option in enumerate(x_axis_cols):
-                if index % 2 == 0:
-                    with col1:
-                         draw_graph(clean_data, x_option, y_axis_val, graph_type)
-                else:
-                     with col2:
-                         draw_graph(clean_data, x_option, y_axis_val, graph_type)
+        chart_display = page["chart_display"]
+        color_scale = page["color_scale"]
+        multiple_series = True if chart_display == "Multiple Series" else False
+        if multiple_series:
+            draw_graph(clean_data, independent_val, dependent_cols,
+                       graph_type, color_scale)
         else:
-            for index, x_option in enumerate(x_axis_cols):
-                draw_graph(clean_data, x_option, y_axis_val, graph_type)
+            if len(dependent_cols) > 3:
+                col1, col2 = None, None
+                for index, dependent_val in enumerate(dependent_cols):
+                    if col1 is None:
+                        col1, col2 = st.columns(2, border=True)
+                    if index % 2 == 0:
+                        with col1:
+                             draw_graph(clean_data, independent_val,
+                                        dependent_val, graph_type, color_scale)
+                    else:
+                        with col2:
+                             draw_graph(clean_data, independent_val,
+                                        dependent_val, graph_type, color_scale)
+                        col1, col2 = None, None
+            else:
+                for index, y_option in enumerate(dependent_cols):
+                    draw_graph(clean_data, independent_val, y_option,
+                               graph_type, color_scale)
 
 
 def get_color_indicator(val):
@@ -343,6 +372,19 @@ def format_drop_options(col):
     return option_text
 
 
+def create_correlation():
+    st.subheader("Correlation between numerical features")
+    # Filter only numerical data
+    numeric_data = data["clean"].select_dtypes(include=numeric_dtypes)
+    corr = numeric_data.corr().round(2)
+    color_scale = page["color_scale"]
+    if color_scale and color_scale != "Solid":
+        fig = px.imshow(corr, text_auto=True, width=700, height=600,
+                        color_continuous_scale=color_scale)
+    else:
+        fig = px.imshow(corr, text_auto=True, width=700, height=600)
+    st.plotly_chart(fig, use_container_width=False)
+
 def config_section():
     elements = page["config"]
     index_options = data["clean"].columns
@@ -351,6 +393,9 @@ def config_section():
     if index_col and index_col not in index_options:
         ix = 0
         index_options = index_options.insert(ix, index_col)
+
+    with page["correlation_tab"]:
+        create_correlation()
 
     with page["config_tab"]:
         config_form = st.form(key="config_form", enter_to_submit=False,
@@ -452,34 +497,37 @@ def set_column_config(col_name, data_type, fill_value, description):
         data["config"]["column_configs"][col_name] = col_config
     st.session_state["column_config"] = data["config"]["column_configs"]
 
+
 def delete_column_config(col_name):
     data["config"]["column_configs"].pop(col_name)
     st.session_state["column_config"] = data["config"]["column_configs"]
 
 
-def file_uploader():
-    with st.sidebar:
-        st.subheader(":material/settings: Configuration")
-        data_file = st.file_uploader(":material/upload: Upload a CSV file",
-                                    type=['csv', 'xls', 'xlsx'],
-                                    on_change=clear_session_data)
-        page["data_file"] = data_file
-
-    load_data(data_file)
+def format_chart_type_options(col):
+    option_text = col.capitalize()
+    if col == "scatter":
+        option_text += " (max. of 8 variables)"
+    return option_text
 
 
 def main_section():
     st.title(":material/analytics: Data Analysis, Cleaning, and Visualiser")
     st.write("Create graphical visualisations from data files")
 
-    data_tab, raw_tab, summary_tab, config_tab = st.tabs(
+    if data["filename"] is not None:
+        st.subheader(data["filename"])
+
+    (data_tab, raw_tab, summary_tab,
+     correlation_tab, config_tab) = st.tabs(
         [":material/data_table: Clean Data",
          ":material/data_table: Raw Data",
          ":material/data_object: Summary",
+         ":material/key_visualizer: Correlation",
          ":material/build: Config"])
     page["data_tab"] = data_tab
     page["raw_tab"] = raw_tab
     page["summary_tab"] = summary_tab
+    page["correlation_tab"] = correlation_tab
     page["config_tab"] = config_tab
 
     if data["has_data"]:
@@ -488,6 +536,37 @@ def main_section():
         page["summary_tab"].dataframe(data["summary"],
                                       column_config=summary_config)
 
+
+def sidebar_config():
+    with st.sidebar:
+        st.subheader(":material/dataset: Dataset")
+        data_file = st.file_uploader(":material/upload: Upload a data file",
+                                     type=['csv', 'xls', 'xlsx'],
+                                     on_change=clear_session_data,
+                                     key="data_file")
+        page["data_file"] = data_file
+
+    load_data(data_file)
+
+    if len(data["raw"]) > 0:
+        form_box = st.sidebar.container(border=True)
+        with form_box:
+            st.subheader(":material/chart_data: Chart")
+
+            chart_type = st.selectbox("Chart Type", chart_types,
+                                      key="chart_type", index=0,
+                                      format_func=format_chart_type_options)
+            if chart_type in ["scatter", "heatmap"]:
+                st.selectbox("Color Scale", color_scales,
+                             key="color_scale", index=0)
+            chart_form = st.form(key="all_data_form", border=False)
+            chart_form.segmented_control("Display",
+                                 ["Multiple Graphs", "Multiple Series"],
+                                 default="Multiple Graphs",
+                                 selection_mode="single",
+                                 key="chart_display")
+
+        create_select_boxes(chart_form)
 
 read_session_data()
 
@@ -509,18 +588,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-file_uploader()
+sidebar_config()
 
 main_section()
 
 if len(data["raw"]) > 0:
-    st.divider()
-    tab_cont, tab_cat = st.sidebar.tabs(["Continuous", "Categorical"])
-    page["side"]["continuous"]["tab"] = tab_cont
-    page["side"]["categorical"]["tab"] = tab_cat
-    create_select_boxes()
-
-    st.sidebar.divider()
     config_section()
 
 create_graphs()
