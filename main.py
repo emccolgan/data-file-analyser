@@ -9,10 +9,9 @@ dtypes = ['boolean', 'Int8', 'Int16', 'Int32', 'Int64', 'Float32',
           'Float64', 'datetime64', 'string', 'object', 'category']
 numeric_dtypes = ['int8', 'int16', 'int32', 'int64', 'float32', 'float64',
                   'Int8', 'Int16', 'Int32', 'Int64', 'Float32', 'Float64']
-int_dtypes = ['int8', 'int16', 'int32', 'int64',
-              'Int8', 'Int16', 'Int32', 'Int64']
+int_dtypes = ['int8', 'int16', 'int32', 'int64', 'Int8', 'Int16', 'Int32', 'Int64']
 chart_types = ['scatter', 'heatmap', 'histogram', 'line', 'bar', 'box plot']
-agg_funcs = {"Count": "count", "Sum": "sum", "Mean": "mean",
+agg_funcs = {"Count (Unique Values)": "count", "Sum": "sum", "Mean": "mean",
              "Median": "median", "Standard Deviation": "std",
              "Variance": "var", "Max": "max", "Min": "min"}
 hist_funcs = {"Count": "count", "Sum": "sum", "Mean": "avg",
@@ -48,7 +47,7 @@ page = {
     "chart_type": None,
     "chart_display": None,
     "agg_func": None,
-    "color_scale": None,
+    "color_scale": "Solid",
     "variables":{
         "dependent": {
             "select": st.empty(),
@@ -197,7 +196,6 @@ def draw_graph(chart_data, x_axis, y_axis, graph_type, color_scale):
         y_label = agg_name if isinstance(y_axis, list) else get_axis_label(y_axis,
                                                                            agg_name)
         if y_axis is None:
-            labels = {"x": x_axis.title(), "y": agg_name.title()}
             plot = px.histogram(chart_data, x=x_axis, histfunc=agg_func)
             plot.update_xaxes(title_text=x_axis.title())
             plot.update_yaxes(title_text=agg_name.title())
@@ -444,7 +442,7 @@ def format_drop_options(col):
 
 
 def create_correlation():
-    st.subheader("Correlation between numerical features")
+    chart_title = "Correlation between numerical features"
     # Filter only numerical data
     numeric_data = data["clean"].select_dtypes(include=numeric_dtypes)
     corr = numeric_data.corr().round(2)
@@ -454,6 +452,13 @@ def create_correlation():
                         color_continuous_scale=color_scale)
     else:
         fig = px.imshow(corr, text_auto=True, width=700, height=600)
+    fig.update_layout(
+        title={
+            "text": chart_title,
+            "x": 0.5,
+            "xanchor": "center",
+            "font":{"size":24}
+        })
     st.plotly_chart(fig, use_container_width=False)
 
 def config_section():
