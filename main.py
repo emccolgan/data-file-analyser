@@ -448,11 +448,20 @@ def create_correlation():
     corr = numeric_data.corr().round(2)
     color_scale = page["color_scale"]
     if color_scale and color_scale != "Solid":
-        fig = px.imshow(corr, text_auto=True, width=700, height=600,
-                        color_continuous_scale=color_scale)
+        fig = px.imshow(corr, text_auto=True, width=700, height=600, labels={
+            "x":"X Feature",
+            "y":"Y Feature",
+            "color":"Correlation"
+        }, color_continuous_scale=color_scale)
     else:
-        fig = px.imshow(corr, text_auto=True, width=700, height=600)
+        fig = px.imshow(corr, text_auto=True, width=700, height=600, labels={
+            "x":"X Feature",
+            "y":"Y Feature",
+            "color":"Correlation"
+        })
     fig.update_layout(
+        xaxis_title=None,
+        yaxis_title=None,
         title={
             "text": chart_title,
             "x": 0.5,
