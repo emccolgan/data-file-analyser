@@ -12,6 +12,11 @@ numeric_dtypes = ['int8', 'int16', 'int32', 'int64', 'float32', 'float64',
 int_dtypes = ['int8', 'int16', 'int32', 'int64',
               'Int8', 'Int16', 'Int32', 'Int64']
 chart_types = ['scatter', 'heatmap', 'histogram', 'line', 'bar', 'box plot']
+agg_funcs = {"Count": "count", "Sum": "sum", "Mean": "mean",
+             "Median": "median", "Standard Deviation": "std",
+             "Variance": "var", "Max": "max", "Min": "min"}
+hist_funcs = {"Count": "count", "Sum": "sum", "Mean": "avg",
+              "Minimum": "min", "Maximum": "max"}
 color_scales = ['Solid'] + px.colors.named_colorscales()
 
 data = {
@@ -42,6 +47,7 @@ page = {
     "data_file": st.empty(),
     "chart_type": None,
     "chart_display": None,
+    "agg_func": None,
     "color_scale": None,
     "variables":{
         "dependent": {
@@ -95,6 +101,9 @@ def read_session_data():
     if st.session_state.get('chart_display'):
         page["chart_display"] = st.session_state["chart_display"]
 
+    if st.session_state.get('agg_func'):
+        page["agg_func"] = st.session_state["agg_func"]
+
     if st.session_state.get('color_scale'):
         page["color_scale"] = st.session_state["color_scale"]
 
@@ -118,6 +127,36 @@ def clear_session_data():
         st.session_state.pop('column_config')
 
 
+def aggregate_dataset(dataset, group, agg_func):
+    if agg_func == "mean":
+        return dataset.groupby(group, as_index=False).mean()
+    elif agg_func == "median":
+        return dataset.groupby(group, as_index=False).median()
+    elif agg_func == "mode":
+        return dataset.groupby(group, as_index=False).mode()
+    elif agg_func == "std":
+        return dataset.groupby(group, as_index=False).std()
+    elif agg_func == "var":
+        return dataset.groupby(group, as_index=False).var()
+    elif agg_func == "max":
+        return dataset.groupby(group, as_index=False).max()
+    elif agg_func == "min":
+        return dataset.groupby(group, as_index=False).min()
+    elif agg_func == "sum":
+        return dataset.groupby(group, as_index=False).sum()
+    elif agg_func == "count":
+        return dataset.groupby(group, as_index=False).nunique()
+    else:
+        return dataset
+
+
+def get_axis_label(label, agg=""):
+    if agg:
+        full_label = agg.title() + " of " + label.replace("_", " ").title()
+    else:
+        full_label = label.replace("_", " ").title()
+    return full_label
+
 def draw_graph(chart_data, x_axis, y_axis, graph_type, color_scale):
     """ Draws the graphs for the csv data.
     :param chart_data: (pandas.DataFrame) Dataframe containing the csv data.
@@ -136,6 +175,9 @@ def draw_graph(chart_data, x_axis, y_axis, graph_type, color_scale):
                               color_continuous_scale=color_scale)
         else:
             plot = px.scatter(chart_data, x=x_axis, y=y_axis)
+        plot.update_xaxes(title_text=get_axis_label(x_axis))
+        if isinstance(y_axis, str):
+            plot.update_yaxes(title_text=get_axis_label(y_axis))
         sleep(0.1)
         st.plotly_chart(plot, use_container_width=True, key=key)
     elif graph_type == "heatmap":
@@ -143,26 +185,55 @@ def draw_graph(chart_data, x_axis, y_axis, graph_type, color_scale):
             plot = px.density_heatmap(chart_data, x=x_axis, y=y_axis,
                                       color_continuous_scale=color_scale)
         else:
-            plot = px.density_heatmap(chart_data, x=x_axis)
+            plot = px.density_heatmap(chart_data, x=x_axis, y=y_axis)
+        plot.update_xaxes(title_text=get_axis_label(x_axis))
+        if isinstance(y_axis, str):
+            plot.update_yaxes(title_text=get_axis_label(y_axis))
         sleep(0.1)
         st.plotly_chart(plot, use_container_width=True, key=key)
     elif graph_type == "histogram":
+        agg_name = page.get("agg_func")
+        agg_func = hist_funcs.get(agg_name) if agg_name else 'avg'
+        y_label = agg_name if isinstance(y_axis, list) else get_axis_label(y_axis,
+                                                                           agg_name)
         if y_axis is None:
-            plot = px.histogram(chart_data, x=x_axis)
+            labels = {"x": x_axis.title(), "y": agg_name.title()}
+            plot = px.histogram(chart_data, x=x_axis, histfunc=agg_func)
+            plot.update_xaxes(title_text=x_axis.title())
+            plot.update_yaxes(title_text=agg_name.title())
         else:
-            plot = px.histogram(chart_data, x=x_axis, y=y_axis, histfunc='avg')
+            plot = px.histogram(chart_data, x=x_axis, y=y_axis, histfunc=agg_func)
+            plot.update_xaxes(title_text=x_axis.title())
+            plot.update_yaxes(title_text=y_label)
         sleep(0.1)
         st.plotly_chart(plot, use_container_width=True, key=key)
     elif graph_type == "line":
-        plot = px.line(chart_data, x=x_axis, y=y_axis)
+        agg_name = page.get("agg_func")
+        agg_func = agg_funcs.get(agg_name) if agg_name else 'mean'
+        agg_data = aggregate_dataset(chart_data, x_axis, agg_func)
+        y_label = agg_name if isinstance(y_axis, list) else get_axis_label(y_axis,
+                                                                           agg_name)
+        plot = px.line(agg_data, x=x_axis, y=y_axis)
+        plot.update_xaxes(title_text=x_axis.title())
+        plot.update_yaxes(title_text=y_label)
         sleep(0.1)
         st.plotly_chart(plot, use_container_width=True, key=key)
     elif graph_type == "bar":
-        plot = px.bar(chart_data, x=x_axis)
+        agg_name = page.get("agg_func")
+        agg_func = agg_funcs.get(agg_name) if agg_name else 'mean'
+        agg_data = aggregate_dataset(chart_data, x_axis, agg_func)
+        y_label = agg_name if isinstance(y_axis, list) else get_axis_label(y_axis,
+                                                                           agg_name)
+        plot = px.bar(agg_data, x=x_axis, y=y_axis)
+        plot.update_xaxes(title_text=x_axis.title())
+        plot.update_yaxes(title_text=y_label)
         sleep(0.1)
         st.plotly_chart(plot, use_container_width=True, key=key)
     elif graph_type == "box plot":
         plot = px.box(chart_data, x=x_axis, y=y_axis)
+        plot.update_xaxes(title_text=get_axis_label(x_axis))
+        if isinstance(y_axis, str):
+            plot.update_yaxes(title_text=get_axis_label(y_axis))
         sleep(0.1)
         st.plotly_chart(plot, use_container_width=True, key=key)
     return plot
@@ -556,9 +627,19 @@ def sidebar_config():
             chart_type = st.selectbox("Chart Type", chart_types,
                                       key="chart_type", index=0,
                                       format_func=format_chart_type_options)
+
+            if chart_type in ["histogram", "bar", "line"]:
+                if chart_type == "histogram":
+                    aggregates = hist_funcs.keys()
+                else:
+                    aggregates = agg_funcs.keys()
+                st.selectbox("Aggregate Function", aggregates,
+                             key="agg_func", index=0)
+
             if chart_type in ["scatter", "heatmap"]:
                 st.selectbox("Color Scale", color_scales,
                              key="color_scale", index=0)
+
             chart_form = st.form(key="all_data_form", border=False)
             chart_form.segmented_control("Display",
                                  ["Multiple Graphs", "Multiple Series"],
