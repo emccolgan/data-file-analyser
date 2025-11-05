@@ -446,19 +446,11 @@ def create_correlation():
     # Filter only numerical data
     numeric_data = data["clean"].select_dtypes(include=numeric_dtypes)
     corr = numeric_data.corr().round(2)
-    color_scale = page["color_scale"]
-    if color_scale and color_scale != "Solid":
-        fig = px.imshow(corr, text_auto=True, width=700, height=600, labels={
-            "x":"X Feature",
-            "y":"Y Feature",
-            "color":"Correlation"
-        }, color_continuous_scale=color_scale)
-    else:
-        fig = px.imshow(corr, text_auto=True, width=700, height=600, labels={
-            "x":"X Feature",
-            "y":"Y Feature",
-            "color":"Correlation"
-        })
+    fig = px.imshow(corr, text_auto=True, width=700, height=600, labels={
+        "x":"X Feature",
+        "y":"Y Feature",
+        "color":"Correlation"
+    }, color_continuous_scale=px.colors.diverging.RdBu)
     fig.update_layout(
         xaxis_title=None,
         yaxis_title=None,
