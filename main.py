@@ -131,7 +131,6 @@ def clear_session_data():
 
 
 def aggregate_dataset(dataset, group, agg_func):
-    st.write(f"{group}, {agg_func}")
     if agg_func == "mean":
         return dataset.groupby(group, as_index=False).mean()
     elif agg_func == "median":
@@ -171,8 +170,9 @@ def draw_graph(chart_data, x_axis, y_axis, label, graph_type, color_scale):
     :param color_scale: (str) The color scale to use for the graph
     """
     plot = None
-    key = f"{graph_type}_{x_axis}_{y_axis}"
-    st.subheader(f"{x_axis} vs. {y_axis}")
+    x_name = x_axis if graph_type != "box plot" else label
+    key = f"{graph_type}_{x_name}_{y_axis}"
+    st.subheader(f"{x_name} vs. {y_axis}")
     use_color_sequence = color_scale != "Solid"
     if graph_type == "scatter":
         if use_color_sequence:
@@ -198,7 +198,9 @@ def draw_graph(chart_data, x_axis, y_axis, label, graph_type, color_scale):
         st.plotly_chart(plot, use_container_width=True, key=key)
     elif graph_type == "histogram":
         agg_name = page.get("agg_func")
-        agg_func = hist_funcs.get(agg_name) if agg_name else 'avg'
+        agg_func = 'count'
+        if agg_name and agg_funcs.get(agg_name):
+            agg_func = agg_funcs.get(agg_name)
         y_label = agg_name if isinstance(y_axis, list) else get_axis_label(y_axis,
                                                                            agg_name)
         if y_axis is None:
@@ -215,12 +217,12 @@ def draw_graph(chart_data, x_axis, y_axis, label, graph_type, color_scale):
         st.plotly_chart(plot, use_container_width=True, key=key)
     elif graph_type == "line":
         agg_name = page.get("agg_func")
-        agg_func = agg_funcs.get(agg_name) if agg_name else 'count'
+        agg_func = 'count'
+        if agg_name and agg_funcs.get(agg_name):
+            agg_func = agg_funcs.get(agg_name)
         agg_data = aggregate_dataset(chart_data, [label, x_axis], agg_func)
         y_label = agg_name if isinstance(y_axis, list) else get_axis_label(y_axis,
                                                                            agg_name)
-        st.write(agg_name)
-        st.write(agg_data)
         plot = px.line(agg_data, x=x_axis, y=y_axis, color=label)
         plot.update_xaxes(title_text=x_axis.title())
         plot.update_yaxes(title_text=y_label)
@@ -228,7 +230,9 @@ def draw_graph(chart_data, x_axis, y_axis, label, graph_type, color_scale):
         st.plotly_chart(plot, use_container_width=True, key=key)
     elif graph_type == "bar":
         agg_name = page.get("agg_func")
-        agg_func = agg_funcs.get(agg_name) if agg_name else 'count'
+        agg_func = 'count'
+        if agg_name and agg_funcs.get(agg_name):
+            agg_func = agg_funcs.get(agg_name)
         agg_data = aggregate_dataset(chart_data, [label, x_axis], agg_func)
         y_label = agg_name if isinstance(y_axis, list) else get_axis_label(y_axis,
                                                                            agg_name)
@@ -239,7 +243,7 @@ def draw_graph(chart_data, x_axis, y_axis, label, graph_type, color_scale):
         st.plotly_chart(plot, use_container_width=True, key=key)
     elif graph_type == "box plot":
         plot = px.box(chart_data, x=label, y=y_axis, color=label)
-        plot.update_xaxes(title_text=get_axis_label(x_axis))
+        plot.update_xaxes(title_text=get_axis_label(label))
         if isinstance(y_axis, str):
             plot.update_yaxes(title_text=get_axis_label(y_axis))
         sleep(0.1)
@@ -367,40 +371,6 @@ def load_data(data_file):
             active_summary["genre"] == "Categorical"].index.tolist()
         columns["continuous_numerical"] = [col for col in columns["numerical"]
                                            if col in columns["continuous"]]
-
-
-def create_select_boxes(chart_form):
-    columns = data["columns"]
-    var_data = page["variables"]
-    chart_type = page["chart_type"]
-    max_charts = 8 if chart_type == "scatter" else None
-    label_columns = columns["categorical"] + columns["continuous"]
-    feature_columns = columns["continuous"] + columns["categorical"]
-    label_output_var = var_data["label_output"]
-    label_output_select = chart_form.selectbox("Label / Output Variable",
-                                               label_columns,
-                                               key="label_output_select")
-    label_output_var["select"] = label_output_select
-    x_feature_var = var_data["x_feature"]
-    x_feature_select = chart_form.selectbox("X-axis Feature Variable",
-                                            feature_columns,
-                                            key="x_feature_select")
-    x_feature_var["select"] = x_feature_select
-    y_feature_var = var_data["y_feature"]
-    default_y_features = y_feature_var["values"]
-    if max_charts is not None:
-        default_y_features = default_y_features[:max_charts]
-        y_feature_var["values"] = default_y_features
-        st.session_state['y_feature_cols'] = default_y_features
-    y_feature_select = chart_form.multiselect("Y-axis Feature Variables",
-                                              feature_columns,
-                                              default=default_y_features,
-                                              key="y_feature_select",
-                                              max_selections=max_charts)
-    y_feature_var["select"] = y_feature_select
-    chart_form.form_submit_button("Draw Graphs",
-                                  type="primary",
-                                  key="btn_var_data")
 
 
 def create_graphs():
@@ -628,6 +598,45 @@ def main_section():
                                       column_config=summary_config)
 
 
+def create_select_boxes(chart_form, chart_type):
+    columns = data["columns"]
+    var_data = page["variables"]
+    page["chart_type"] = chart_type
+    max_charts = 8 if chart_type == "scatter" else None
+    label_columns = columns["categorical"] + columns["continuous"]
+    feature_columns = columns["continuous"] + columns["categorical"]
+
+    if chart_type != "heatmap":
+        label_output_var = var_data["label_output"]
+        label_output_select = chart_form.selectbox("Label / Output Variable",
+                                                   label_columns,
+                                                   key="label_output_select")
+        label_output_var["select"] = label_output_select
+
+    if chart_type != "box plot":
+        x_feature_var = var_data["x_feature"]
+        x_feature_select = chart_form.selectbox("X-axis Feature Variable",
+                                                feature_columns,
+                                                key="x_feature_select")
+        x_feature_var["select"] = x_feature_select
+
+    y_feature_var = var_data["y_feature"]
+    default_y_features = y_feature_var["values"]
+    if max_charts is not None:
+        default_y_features = default_y_features[:max_charts]
+        y_feature_var["values"] = default_y_features
+        st.session_state['y_feature_cols'] = default_y_features
+    y_feature_select = chart_form.multiselect("Y-axis Feature Variables",
+                                              feature_columns,
+                                              default=default_y_features,
+                                              key="y_feature_select",
+                                              max_selections=max_charts)
+    y_feature_var["select"] = y_feature_select
+    chart_form.form_submit_button("Draw Graphs",
+                                  type="primary",
+                                  key="btn_var_data")
+
+
 def sidebar_config():
     with st.sidebar:
         st.subheader(":primary[:material/dataset:] Dataset")
@@ -663,7 +672,7 @@ def sidebar_config():
             chart_form = st.form(key="all_data_form", border=False)
 
         chart_form.subheader(":primary[:material/arrow_split:] Variable Selection")
-        create_select_boxes(chart_form)
+        create_select_boxes(chart_form, chart_type)
 
 read_session_data()
 
