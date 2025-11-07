@@ -10,7 +10,7 @@ dtypes = ['boolean', 'Int8', 'Int16', 'Int32', 'Int64', 'Float32',
 numeric_dtypes = ['int8', 'int16', 'int32', 'int64', 'float32', 'float64',
                   'Int8', 'Int16', 'Int32', 'Int64', 'Float32', 'Float64']
 int_dtypes = ['int8', 'int16', 'int32', 'int64', 'Int8', 'Int16', 'Int32', 'Int64']
-chart_types = ['scatter', 'heatmap', 'histogram', 'line', 'bar', 'box plot']
+chart_types = ['scatter', 'histogram', 'line', 'bar', 'box plot', 'heatmap']
 agg_funcs = {"Count (Unique Values)": "count", "Sum": "sum", "Mean": "mean",
              "Median": "median", "Standard Deviation": "std",
              "Variance": "var", "Max": "max", "Min": "min"}
@@ -45,15 +45,18 @@ page = {
     "config_tab": st.empty(),
     "data_file": st.empty(),
     "chart_type": None,
-    "chart_display": None,
     "agg_func": None,
     "color_scale": "Solid",
     "variables":{
-        "dependent": {
+        "label_output": {
             "select": st.empty(),
             "values": []
         },
-        "independent": {
+        "x_feature": {
+            "select": st.empty(),
+            "values": []
+        },
+        "y_feature": {
             "select": st.empty(),
             "values": []
         }
@@ -82,23 +85,24 @@ def read_session_data():
     if st.session_state.get('drop_columns'):
         data["config"]['drop_columns'] = st.session_state['drop_columns']
 
-    dependent_var = st.session_state.get('dependent_var')
-    if dependent_var:
-        page["variables"]["dependent"]["values"] = dependent_var
-        st.session_state['dependent_cols'] = dependent_var
+    y_feature_var = st.session_state.get('y_feature_select')
+    if y_feature_var:
+        page["variables"]["y_feature"]["values"] = y_feature_var
+        st.session_state['y_feature_cols'] = y_feature_var
 
-    independent_var = st.session_state.get('independent_var')
-    if independent_var:
-        page["variables"]["independent"]["values"] = independent_var
+    label_output_var = st.session_state.get('label_output_select')
+    if label_output_var:
+        page["variables"]["label_output"]["values"] = label_output_var
+
+    x_feature_var = st.session_state.get('x_feature_select')
+    if x_feature_var:
+        page["variables"]["x_feature"]["values"] = x_feature_var
 
     if st.session_state.get('column_config'):
         data["config"]["column_configs"] = st.session_state["column_config"]
 
     if st.session_state.get('chart_type'):
         page["chart_type"] = st.session_state["chart_type"]
-
-    if st.session_state.get('chart_display'):
-        page["chart_display"] = st.session_state["chart_display"]
 
     if st.session_state.get('agg_func'):
         page["agg_func"] = st.session_state["agg_func"]
@@ -119,14 +123,15 @@ def clear_session_data():
     if st.session_state.get('drop_columns'):
         data["config"]['drop_columns'] = []
         st.session_state.pop('drop_columns')
-    if st.session_state.get('dependent_cols'):
-        st.session_state.pop('dependent_cols')
+    if st.session_state.get('y_feature_cols'):
+        st.session_state.pop('y_feature_cols')
     if st.session_state.get('column_config'):
         data["config"]["column_configs"] = {}
         st.session_state.pop('column_config')
 
 
 def aggregate_dataset(dataset, group, agg_func):
+    st.write(f"{group}, {agg_func}")
     if agg_func == "mean":
         return dataset.groupby(group, as_index=False).mean()
     elif agg_func == "median":
@@ -156,11 +161,12 @@ def get_axis_label(label, agg=""):
         full_label = label.replace("_", " ").title()
     return full_label
 
-def draw_graph(chart_data, x_axis, y_axis, graph_type, color_scale):
+def draw_graph(chart_data, x_axis, y_axis, label, graph_type, color_scale):
     """ Draws the graphs for the csv data.
     :param chart_data: (pandas.DataFrame) Dataframe containing the csv data.
     :param x_axis: (str) Name of the x-axis column.
     :param y_axis: (str) Name of the y-axis column.
+    :param label: (str) Name of the label column.
     :param graph_type: (str) The type of graph to be drawn (histogram, scatter, etc.).
     :param color_scale: (str) The color scale to use for the graph
     """
@@ -170,10 +176,10 @@ def draw_graph(chart_data, x_axis, y_axis, graph_type, color_scale):
     use_color_sequence = color_scale != "Solid"
     if graph_type == "scatter":
         if use_color_sequence:
-            plot = px.scatter(chart_data, x=x_axis, y=y_axis, color=y_axis,
+            plot = px.scatter(chart_data, x=x_axis, y=y_axis, color=label,
                               color_continuous_scale=color_scale)
         else:
-            plot = px.scatter(chart_data, x=x_axis, y=y_axis)
+            plot = px.scatter(chart_data, x=x_axis, y=y_axis, color=label)
         plot.update_xaxes(title_text=get_axis_label(x_axis))
         if isinstance(y_axis, str):
             plot.update_yaxes(title_text=get_axis_label(y_axis))
@@ -196,39 +202,43 @@ def draw_graph(chart_data, x_axis, y_axis, graph_type, color_scale):
         y_label = agg_name if isinstance(y_axis, list) else get_axis_label(y_axis,
                                                                            agg_name)
         if y_axis is None:
-            plot = px.histogram(chart_data, x=x_axis, histfunc=agg_func)
+            plot = px.histogram(chart_data, x=x_axis, color=label,
+                                histfunc=agg_func)
             plot.update_xaxes(title_text=x_axis.title())
             plot.update_yaxes(title_text=agg_name.title())
         else:
-            plot = px.histogram(chart_data, x=x_axis, y=y_axis, histfunc=agg_func)
+            plot = px.histogram(chart_data, x=x_axis, y=y_axis, color=label,
+                                histfunc=agg_func)
             plot.update_xaxes(title_text=x_axis.title())
             plot.update_yaxes(title_text=y_label)
         sleep(0.1)
         st.plotly_chart(plot, use_container_width=True, key=key)
     elif graph_type == "line":
         agg_name = page.get("agg_func")
-        agg_func = agg_funcs.get(agg_name) if agg_name else 'mean'
-        agg_data = aggregate_dataset(chart_data, x_axis, agg_func)
+        agg_func = agg_funcs.get(agg_name) if agg_name else 'count'
+        agg_data = aggregate_dataset(chart_data, [label, x_axis], agg_func)
         y_label = agg_name if isinstance(y_axis, list) else get_axis_label(y_axis,
                                                                            agg_name)
-        plot = px.line(agg_data, x=x_axis, y=y_axis)
+        st.write(agg_name)
+        st.write(agg_data)
+        plot = px.line(agg_data, x=x_axis, y=y_axis, color=label)
         plot.update_xaxes(title_text=x_axis.title())
         plot.update_yaxes(title_text=y_label)
         sleep(0.1)
         st.plotly_chart(plot, use_container_width=True, key=key)
     elif graph_type == "bar":
         agg_name = page.get("agg_func")
-        agg_func = agg_funcs.get(agg_name) if agg_name else 'mean'
-        agg_data = aggregate_dataset(chart_data, x_axis, agg_func)
+        agg_func = agg_funcs.get(agg_name) if agg_name else 'count'
+        agg_data = aggregate_dataset(chart_data, [label, x_axis], agg_func)
         y_label = agg_name if isinstance(y_axis, list) else get_axis_label(y_axis,
                                                                            agg_name)
-        plot = px.bar(agg_data, x=x_axis, y=y_axis)
+        plot = px.bar(agg_data, x=x_axis, y=y_axis, color=label)
         plot.update_xaxes(title_text=x_axis.title())
         plot.update_yaxes(title_text=y_label)
         sleep(0.1)
         st.plotly_chart(plot, use_container_width=True, key=key)
     elif graph_type == "box plot":
-        plot = px.box(chart_data, x=x_axis, y=y_axis)
+        plot = px.box(chart_data, x=label, y=y_axis, color=label)
         plot.update_xaxes(title_text=get_axis_label(x_axis))
         if isinstance(y_axis, str):
             plot.update_yaxes(title_text=get_axis_label(y_axis))
@@ -364,60 +374,64 @@ def create_select_boxes(chart_form):
     var_data = page["variables"]
     chart_type = page["chart_type"]
     max_charts = 8 if chart_type == "scatter" else None
-    all_columns = columns["all"]
-    independent_var = var_data["independent"]
-    independent_var_select = chart_form.selectbox("Independent Variable",
-                                                 all_columns,
-                                                 key="independent_var",
-                                                 index=0)
-    independent_var["select"] = independent_var_select
-    dependent_var = var_data["dependent"]
-    default_dependents = dependent_var["values"]
+    label_columns = columns["categorical"] + columns["continuous"]
+    feature_columns = columns["continuous"] + columns["categorical"]
+    label_output_var = var_data["label_output"]
+    label_output_select = chart_form.selectbox("Label / Output Variable",
+                                               label_columns,
+                                               key="label_output_select")
+    label_output_var["select"] = label_output_select
+    x_feature_var = var_data["x_feature"]
+    x_feature_select = chart_form.selectbox("X-axis Feature Variable",
+                                            feature_columns,
+                                            key="x_feature_select")
+    x_feature_var["select"] = x_feature_select
+    y_feature_var = var_data["y_feature"]
+    default_y_features = y_feature_var["values"]
     if max_charts is not None:
-        default_dependents = default_dependents[:max_charts]
-    dependent_var_select = chart_form.multiselect("Dependent Variables",
-                                                 all_columns, default=default_dependents,
-                                                 key="dependent_var",
-                                                 max_selections=max_charts)
-    dependent_var["select"] = dependent_var_select
+        default_y_features = default_y_features[:max_charts]
+        y_feature_var["values"] = default_y_features
+        st.session_state['y_feature_cols'] = default_y_features
+    y_feature_select = chart_form.multiselect("Y-axis Feature Variables",
+                                              feature_columns,
+                                              default=default_y_features,
+                                              key="y_feature_select",
+                                              max_selections=max_charts)
+    y_feature_var["select"] = y_feature_select
     chart_form.form_submit_button("Draw Graphs",
-                                 type="primary",
-                                 key="btn_var_data")
+                                  type="primary",
+                                  key="btn_var_data")
 
 
 def create_graphs():
-    if st.session_state.get('dependent_cols'):
-        dependent_cols = st.session_state['dependent_cols']
-        st.session_state.pop('dependent_cols')
-        independent_var = page["variables"]["independent"]["select"]
-        independent_val = independent_var
+    if st.session_state.get('y_feature_cols'):
+        y_feature_cols = st.session_state['y_feature_cols']
+        st.session_state.pop('y_feature_cols')
+        label_output_var = page["variables"]["label_output"]["select"]
+        label_output_val = label_output_var
+        x_feature_var = page["variables"]["x_feature"]["select"]
+        x_feature_val = x_feature_var
         graph_type = page["chart_type"]
         clean_data = data["clean"]
-        chart_display = page["chart_display"]
         color_scale = page["color_scale"]
-        multiple_series = True if chart_display == "Multiple Series" else False
-        if multiple_series:
-            draw_graph(clean_data, independent_val, dependent_cols,
-                       graph_type, color_scale)
+        if len(y_feature_cols) > 3:
+            col1, col2 = None, None
+            for index, y_feature_val in enumerate(y_feature_cols):
+                if col1 is None:
+                    col1, col2 = st.columns(2, border=True)
+                if index % 2 == 0:
+                    with col1:
+                         draw_graph(clean_data, x_feature_val, y_feature_val,
+                                    label_output_val, graph_type, color_scale)
+                else:
+                    with col2:
+                         draw_graph(clean_data, x_feature_val, y_feature_val,
+                                    label_output_val, graph_type, color_scale)
+                    col1, col2 = None, None
         else:
-            if len(dependent_cols) > 3:
-                col1, col2 = None, None
-                for index, dependent_val in enumerate(dependent_cols):
-                    if col1 is None:
-                        col1, col2 = st.columns(2, border=True)
-                    if index % 2 == 0:
-                        with col1:
-                             draw_graph(clean_data, independent_val,
-                                        dependent_val, graph_type, color_scale)
-                    else:
-                        with col2:
-                             draw_graph(clean_data, independent_val,
-                                        dependent_val, graph_type, color_scale)
-                        col1, col2 = None, None
-            else:
-                for index, y_option in enumerate(dependent_cols):
-                    draw_graph(clean_data, independent_val, y_option,
-                               graph_type, color_scale)
+            for index, y_option in enumerate(y_feature_cols):
+                draw_graph(clean_data, x_feature_var, y_option,
+                           label_output_val, graph_type, color_scale)
 
 
 def get_color_indicator(val):
@@ -446,7 +460,7 @@ def create_correlation():
     # Filter only numerical data
     numeric_data = data["clean"].select_dtypes(include=numeric_dtypes)
     corr = numeric_data.corr().round(2)
-    fig = px.imshow(corr, text_auto=True, width=700, height=600, labels={
+    fig = px.imshow(corr, text_auto=True, width=700, height=550, labels={
         "x":"X Feature",
         "y":"Y Feature",
         "color":"Correlation"
@@ -616,7 +630,7 @@ def main_section():
 
 def sidebar_config():
     with st.sidebar:
-        st.subheader(":material/dataset: Dataset")
+        st.subheader(":primary[:material/dataset:] Dataset")
         data_file = st.file_uploader(":material/upload: Upload a data file",
                                      type=['csv', 'xls', 'xlsx'],
                                      on_change=clear_session_data,
@@ -628,7 +642,7 @@ def sidebar_config():
     if len(data["raw"]) > 0:
         form_box = st.sidebar.container(border=True)
         with form_box:
-            st.subheader(":material/chart_data: Chart")
+            st.subheader(":primary[:material/chart_data:] Chart")
 
             chart_type = st.selectbox("Chart Type", chart_types,
                                       key="chart_type", index=0,
@@ -642,17 +656,13 @@ def sidebar_config():
                 st.selectbox("Aggregate Function", aggregates,
                              key="agg_func", index=0)
 
-            if chart_type in ["scatter", "heatmap"]:
+            if chart_type in ["heatmap"]:
                 st.selectbox("Color Scale", color_scales,
                              key="color_scale", index=0)
 
             chart_form = st.form(key="all_data_form", border=False)
-            chart_form.segmented_control("Display",
-                                 ["Multiple Graphs", "Multiple Series"],
-                                 default="Multiple Graphs",
-                                 selection_mode="single",
-                                 key="chart_display")
 
+        chart_form.subheader(":primary[:material/arrow_split:] Variable Selection")
         create_select_boxes(chart_form)
 
 read_session_data()
