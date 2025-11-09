@@ -5,8 +5,8 @@ import plotly.express as px
 import streamlit as st
 from time import sleep
 
-dtypes = ['boolean', 'Int8', 'Int16', 'Int32', 'Int64', 'Float32',
-          'Float64', 'datetime64', 'string', 'object', 'category']
+dtypes = ['string', 'boolean', 'Int8', 'Int16', 'Int32', 'Int64', 'Float32',
+          'Float64', 'datetime64', 'object', 'category']
 numeric_dtypes = ['int8', 'int16', 'int32', 'int64', 'float32', 'float64',
                   'Int8', 'Int16', 'Int32', 'Int64', 'Float32', 'Float64']
 int_dtypes = ['int8', 'int16', 'int32', 'int64', 'Int8', 'Int16', 'Int32', 'Int64']
@@ -78,6 +78,8 @@ summary_config = {
 
 
 def read_session_data():
+    """ Reads data from the session state and stores
+        them in the page and data dictionaries. """
     # Initialise values from session_state
     if st.session_state.get('index_column'):
         data["config"]['index'] = st.session_state['index_column']
@@ -115,22 +117,41 @@ def read_session_data():
         data["filename"] = data_file.name
 
 
-def clear_session_data():
+def reset_page_data():
+    """ Resets the session state, config data, and page variables. """
     # Clear values from session_state
     if st.session_state.get('index_column'):
-        data["config"]['index'] = None
         st.session_state.pop('index_column')
+
     if st.session_state.get('drop_columns'):
-        data["config"]['drop_columns'] = []
         st.session_state.pop('drop_columns')
+
     if st.session_state.get('y_feature_cols'):
         st.session_state.pop('y_feature_cols')
+
     if st.session_state.get('column_config'):
-        data["config"]["column_configs"] = {}
         st.session_state.pop('column_config')
+
+    # Reset config data
+    data["config"]['index'] = None
+    data["config"]['drop_columns'] = []
+    data["config"]["column_configs"] = {}
+
+    # Reset variables values
+    page["variables"]["label_output"]["values"] = []
+    page["variables"]["x_feature"]["values"] = []
+    page["variables"]["y_feature"]["values"] = []
 
 
 def aggregate_dataset(dataset, group, agg_func):
+    """ Groups a pandas DataFrame and returns an aggregated
+        DataFrame for the grouping.
+    :param dataset: (pandas.DataFrame) The dataset to aggregate.
+    :param group: (str) The name of the column to group by.
+    :param agg_func: (str) The name of the aggregation function to use.
+        Accepts mean, median, mode, std, var, max, min, sum, count
+    :return: (pandas.DataFrame) The aggregated dataset.
+    """
     if agg_func == "mean":
         return dataset.groupby(group, as_index=False).mean()
     elif agg_func == "median":
@@ -153,11 +174,16 @@ def aggregate_dataset(dataset, group, agg_func):
         return dataset
 
 
-def get_axis_label(label, agg=""):
+def get_axis_label(column, agg=""):
+    """ Get the text label for the chart axis from the column name.
+     :param column: (str) The name of the column.
+     :param agg: (str) The name of the aggregation function used.
+     :return: (str) The text label.
+     """
     if agg:
-        full_label = agg.title() + " of " + label.replace("_", " ").title()
+        full_label = agg.title() + " of " + column.replace("_", " ").title()
     else:
-        full_label = label.replace("_", " ").title()
+        full_label = column.replace("_", " ").title()
     return full_label
 
 def draw_graph(chart_data, x_axis, y_axis, label, graph_type, color_scale):
@@ -168,6 +194,7 @@ def draw_graph(chart_data, x_axis, y_axis, label, graph_type, color_scale):
     :param label: (str) Name of the label column.
     :param graph_type: (str) The type of graph to be drawn (histogram, scatter, etc.).
     :param color_scale: (str) The color scale to use for the graph
+    :return: (plotly.Figure) A plotly chart object
     """
     plot = None
     x_name = x_axis if graph_type != "box plot" else label
@@ -252,46 +279,61 @@ def draw_graph(chart_data, x_axis, y_axis, label, graph_type, color_scale):
 
 
 def convert_column_types(df):
+    """ Converts the column types for column definitions specified in the
+        config section.
+    :param df: (pandas.DataFrame) Dataframe to be converted.
+    :return: (pandas.DataFrame) Dataframe with column dtypes converted.
+    """
     column_configs = data["config"]["column_configs"]
-    df = df.convert_dtypes()
+    df = df.convert_dtypes(infer_objects=True)
+
+    # Loop through the column configurations and set the dtype if specified
     for col in column_configs:
-        dtype = column_configs[col]["dtype"]
+        dtype = column_configs[col].get("dtype")
         if dtype is not None:
             if df[col].dtype in ['object','string'] and dtype in numeric_dtypes:
                 df[col] = df[col].str.replace(",", "")
+
+            # Try to convert the column to the specified data type
             try:
                 df[col] = df[col].astype(dtype)
             except (ValueError, TypeError):
                 st.error(f"Could not convert '{col}' to '{dtype}'", icon="🚨")
-
-    for col in df.columns:
-        if df[col].dtype in ['object','string']:
-            try:
-                df[col] = pd.to_datetime(df[col])
-            except ValueError:
-                pass
     return df
 
 
 def clean_dataset(raw):
+    """ Applies cleaning configuration to the raw dataset, returning a
+        cleaned dataset.
+    :param raw: (pandas.DataFrame) Raw dataset to be cleaned.
+    :return: (pandas.DataFrame) Cleaned dataset.
+    """
     config = data["config"]
     column_configs = config["column_configs"]
 
+    # Set the dataset index if specified in the config section
     if config["index"] is not None:
         raw.set_index(config["index"], drop=True, inplace=True)
 
+    # Make a copy of the raw dataset
     clean_data = raw.copy()
 
+    # For each column that has a configuration, apply the rules specified
     for col in column_configs:
         col_config = column_configs[col]
+
+        # Get the data type for the column
         dtype = clean_data[col].dtype
         if col_config["dtype"] is not None:
             dtype = col_config["dtype"]
+
+        # Get the value to fill in empty (NA) values
         fill_value = None
         if col_config["fill_value"]:
             fill_value = get_fill_value(clean_data[col],
                                         col_config["fill_value"])
 
+        # Try to fill the NA values if specified
         if fill_value is not None:
             try:
                 if dtype is not None and dtype in int_dtypes:
@@ -300,12 +342,18 @@ def clean_dataset(raw):
                 st.error(f"Could not convert '{fill_value}' to '{dtype}'",)
             clean_data[col] = clean_data[col].fillna(fill_value)
 
+    # Drop the specified columns from the dataset
     if len(config["drop_columns"]) > 0:
         clean_data.drop(config["drop_columns"], axis=1, inplace=True)
 
     return raw, clean_data
 
 def get_fill_value(data_series, method):
+    """ Get the fill value based on a specified aggregate function.
+    :param data_series: (pandas.Series) Data series to fill NA values.
+    :param method: (str) Aggregate function or value to use to fill NA values.
+    :return: The fill value.
+    """
     try:
         if method == "mean":
             return data_series.mean()
@@ -320,6 +368,9 @@ def get_fill_value(data_series, method):
 
 
 def load_data(data_file):
+    """ Loads data from a file into a pandas DataFrame.
+    :param data_file: (str) The filepath of the data file.
+    """
     if data_file is not None:
         raw_data = pd.DataFrame()
         try:
@@ -426,11 +477,14 @@ def format_drop_options(col):
 
 
 def create_correlation():
+    """ Creates a chart showing the correlation between the numerical
+        features in the dataset. """
     chart_title = "Correlation between numerical features"
     # Filter only numerical data
-    numeric_data = data["clean"].select_dtypes(include=numeric_dtypes)
+    numeric_data = data["clean"].select_dtypes(include='number')
     corr = numeric_data.corr().round(2)
-    fig = px.imshow(corr, text_auto=True, width=700, height=550, labels={
+    size = min(max(len(corr.columns) * 50, 500), 1200)
+    fig = px.imshow(corr, text_auto=True, width=size + 100, height=size, labels={
         "x":"X Feature",
         "y":"Y Feature",
         "color":"Correlation"
@@ -486,12 +540,11 @@ def config_section():
         with config_cols:
             st.subheader(":material/amend: Configure Columns")
 
-            cols = st.columns([2, 2, 2, 2, 1])
+            cols = st.columns([2, 2, 2, 1])
             cols[0].write("Column")
             cols[1].write("Data Type")
             cols[2].write("Fill Nulls")
-            cols[3].write("Description")
-            cols[4].write("Action")
+            cols[3].write("Action")
             column_configs = data["config"]["column_configs"]
             options = data["clean"].columns.tolist()
             unused_options = [opt for opt in options if opt not in column_configs]
@@ -505,13 +558,43 @@ def config_section():
 def create_column_config_row(cols, options, column=None, values=None):
     fill_options = ["0", "mean", "median", "mode"]
     has_values = values is not None
-    prefix = column if column is not None else ""
+    prefix = column if column is not None else "new"
     column = options.index(column) if column is not None else None
 
-    if has_values and values["dtype"] is not None:
-        dtype = dtypes.index(values["dtype"])
+    clear_dtype = lambda: st.session_state.pop(prefix + "_type_select")
+    prevent_col_change = values is not None
+    col_select = cols[0].selectbox("Column", options, index=column,
+                                   label_visibility="collapsed",
+                                   key=prefix + "_column_select",
+                                   disabled=prevent_col_change,
+                                   format_func=format_drop_options,
+                                   on_change=clear_dtype)
+
+    if len(data["summary"]) > 0 and col_select is not None:
+        col_summary = data["summary"].loc[col_select]
     else:
-        dtype = None
+        col_summary = None
+
+    dtype = values["dtype"] if values is not None else None
+    dtype_index = None
+
+    if st.session_state.get(prefix + "_type_select") is not None:
+        dtype = st.session_state.get(prefix + "_type_select")
+        dtype_index = dtypes.index(dtype)
+    else:
+        if has_values:
+            if dtype is not None:
+                dtype_index = dtypes.index(dtype)
+        elif col_summary is not None:
+            dtype = col_summary["types"]
+            dtype_index = dtypes.index(dtype)
+
+    st.session_state[prefix + "_type_select"] = dtype
+
+    type_select = cols[1].selectbox("Data Type", dtypes, index=dtype_index,
+                                    help="Select Data Type for the Column",
+                                    label_visibility="collapsed",
+                                    key=prefix + "_type_select")
 
     if has_values and values["fill_value"] is not None:
         if values["fill_value"] not in fill_options:
@@ -520,41 +603,27 @@ def create_column_config_row(cols, options, column=None, values=None):
     else:
         fill_value = None
 
-    description = values["description"] if values is not None else None
-    action1 = ":material/refresh:" if values is not None else ":material/add:"
-    prevent_col_change = values is not None
-    col_select = cols[0].selectbox("Column", options, index=column,
-                                   label_visibility="collapsed",
-                                   key=prefix + "_column_select",
-                                   disabled=prevent_col_change,
-                                   format_func=format_drop_options)
-    type_select = cols[1].selectbox("Data Type", dtypes, index=dtype,
-                                    help="Select Data Type for the Column",
-                                    label_visibility="collapsed",
-                                    key=prefix + "_type_select")
     fill_select = cols[2].selectbox("Fill Nulls", fill_options,
                                     help="Select Data Type for the Column",
                                     index=fill_value, accept_new_options=True,
                                     label_visibility="collapsed",
                                     key=prefix + "_fill_select")
-    desc_text = cols[3].text_input("Description", label_visibility="collapsed",
-                                   placeholder="Enter column description...",
-                                   value=description,
-                                   key=prefix + "_desc_text")
-    col_add, col_del = cols[4].columns(2, gap="small", width=100)
+
+    action1 = ":material/refresh:" if values is not None else ":material/add:"
+    col_add, col_del = cols[3].columns(2, gap="small", width=100)
     col_add.button(action1, type="secondary", key=prefix + "_action1",
                    on_click=set_column_config,
-                   args=[col_select, type_select, fill_select, desc_text])
+                   args=[col_select, type_select, fill_select])
+
     if values is not None:
         col_del.button(":material/delete:", type="secondary", key=prefix + "_action2",
                        on_click=delete_column_config,
                        args=[col_select])
 
 
-def set_column_config(col_name, data_type, fill_value, description):
+def set_column_config(col_name, data_type, fill_value):
     if col_name is not None:
-        col_config = {"dtype": data_type,
-                      "fill_value": fill_value, "description": description}
+        col_config = {"dtype": data_type, "fill_value": fill_value}
         data["config"]["column_configs"][col_name] = col_config
     st.session_state["column_config"] = data["config"]["column_configs"]
 
@@ -642,7 +711,7 @@ def sidebar_config():
         st.subheader(":primary[:material/dataset:] Dataset")
         data_file = st.file_uploader(":material/upload: Upload a data file",
                                      type=['csv', 'xls', 'xlsx'],
-                                     on_change=clear_session_data,
+                                     on_change=reset_page_data,
                                      key="data_file")
         page["data_file"] = data_file
 
