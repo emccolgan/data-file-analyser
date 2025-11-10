@@ -126,6 +126,9 @@ def reset_page_data():
     if st.session_state.get('drop_columns'):
         st.session_state.pop('drop_columns')
 
+    if st.session_state.get('y_feature_select'):
+        st.session_state.pop('y_feature_select')
+
     if st.session_state.get('y_feature_cols'):
         st.session_state.pop('y_feature_cols')
 
@@ -141,6 +144,8 @@ def reset_page_data():
     page["variables"]["label_output"]["values"] = []
     page["variables"]["x_feature"]["values"] = []
     page["variables"]["y_feature"]["values"] = []
+    page["config"]["index"] = st.empty()
+    page["config"]["drop_columns"] = st.empty()
 
 
 def aggregate_dataset(dataset, group, agg_func):
@@ -226,8 +231,8 @@ def draw_graph(chart_data, x_axis, y_axis, label, graph_type, color_scale):
     elif graph_type == "histogram":
         agg_name = page.get("agg_func")
         agg_func = 'count'
-        if agg_name and agg_funcs.get(agg_name):
-            agg_func = agg_funcs.get(agg_name)
+        if agg_name and hist_funcs.get(agg_name):
+            agg_func = hist_funcs.get(agg_name)
         y_label = agg_name if isinstance(y_axis, list) else get_axis_label(y_axis,
                                                                            agg_name)
         if y_axis is None:
