@@ -157,6 +157,12 @@ def aggregate_dataset(dataset, group, agg_func):
         Accepts mean, median, mode, std, var, max, min, sum, count
     :return: (pandas.DataFrame) The aggregated dataset.
     """
+    if isinstance(group, list):
+        # Remove duplicates from the group
+        group = list(set(group))
+
+    # Group the data and apply the aggregate function,
+    # return the aggregate dateset
     if agg_func == "mean":
         return dataset.groupby(group, as_index=False).mean()
     elif agg_func == "median":
@@ -206,6 +212,8 @@ def draw_graph(chart_data, x_axis, y_axis, label, graph_type, color_scale):
     key = f"{graph_type}_{x_name}_{y_axis}"
     st.subheader(f"{x_name} vs. {y_axis}")
     use_color_sequence = color_scale != "Solid"
+    show_legend = (x_axis != label)
+
     if graph_type == "scatter":
         if use_color_sequence:
             plot = px.scatter(chart_data, x=x_axis, y=y_axis, color=label,
@@ -280,6 +288,10 @@ def draw_graph(chart_data, x_axis, y_axis, label, graph_type, color_scale):
             plot.update_yaxes(title_text=get_axis_label(y_axis))
         sleep(0.1)
         st.plotly_chart(plot, use_container_width=True, key=key)
+
+    if plot is not None:
+        plot.update_layout(showlegend=show_legend)
+
     return plot
 
 
