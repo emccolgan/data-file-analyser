@@ -282,7 +282,9 @@ def draw_graph(chart_data, x_axis, y_axis, label, graph_type, color_scale):
         sleep(0.1)
         st.plotly_chart(plot, use_container_width=True, key=key)
     elif graph_type == "box plot":
-        plot = px.box(chart_data, x=label, y=y_axis, color=label)
+        label_order = sorted(chart_data[label].unique().tolist())
+        plot = px.box(chart_data, x=label, y=y_axis, color=label,
+                      category_orders={label: label_order})
         plot.update_xaxes(title_text=get_axis_label(label))
         if isinstance(y_axis, str):
             plot.update_yaxes(title_text=get_axis_label(y_axis))
